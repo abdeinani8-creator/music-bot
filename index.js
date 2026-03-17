@@ -1,7 +1,10 @@
+require('dotenv').config();
+
 const { Client, GatewayIntentBits } = require('discord.js');
 const { joinVoiceChannel, entersState, VoiceConnectionStatus } = require('@discordjs/voice');
 const { Player } = require('discord-player');
 const { DefaultExtractors } = require('@discord-player/extractor');
+const OpenAI = require("openai");
 
 const client = new Client({
   intents: [
@@ -14,16 +17,21 @@ const client = new Client({
 
 const player = new Player(client);
 
+// 🤖 AI setup
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
+
 // 🔥 Load extractors
 (async () => {
   await player.extractors.loadMulti(DefaultExtractors);
 })();
 
 client.once('ready', () => {
-  console.log('🔥 Bot ready 24/7!');
+  console.log('🔥 Bot ready 24/7 with AI!');
 });
 
-// 🔥 GLOBAL ERROR HANDLING (VERY IMPORTANT)
+// 🔥 ERROR HANDLING
 player.events.on('error', (queue, error) => {
   console.log('GLOBAL ERROR:', error);
 });
@@ -54,13 +62,13 @@ async function stayInChannel(voiceChannel) {
   }
 }
 
-// 🎵 COMMANDS
+// 🎵 + 🤖 COMMANDS
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
   const voiceChannel = message.member?.voice?.channel;
 
-  // 🔥 JOIN (STAY FOREVER)
+  // 🔥 JOIN
   if (message.content === '!join') {
     if (!voiceChannel) return message.reply('❌ Join VC first');
 
@@ -94,7 +102,7 @@ client.on('messageCreate', async (message) => {
 
     } catch (err) {
       console.error('PLAY ERROR:', err);
-      message.reply('❌ Failed to play audio (try another song)');
+      message.reply('❌ Failed to play audio');
     }
   }
 
@@ -109,7 +117,7 @@ client.on('messageCreate', async (message) => {
     message.reply('⏭️ Skipped!');
   }
 
-  // ⏹️ STOP (BUT STAY IN VC)
+  // ⏹️ STOP
   if (message.content === '!stop') {
     const queue = player.nodes.get(message.guild.id);
     if (queue) queue.delete();
@@ -130,6 +138,32 @@ client.on('messageCreate', async (message) => {
     queue.node.setVolume(vol);
     message.reply(`🔊 Volume set to ${vol}%`);
   }
+
+  // 🤖 AI COMMAND
+  if (message.content.startsWith('!ai')) {
+    const userMessage = message.content.replace('!ai', '').trim();
+
+    if (!userMessage) {
+      return message.reply('❌ Write something after !ai');
+    }
+
+    try {
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: "You are a friendly Discord bot." },
+          { role: "user", content: userMessage }
+        ]
+      });
+
+      message.reply(response.choices[0].message.content);
+
+    } catch (error) {
+      console.error(error);
+      message.reply('❌ AI error');
+    }
+  }
+
 });
 
 client.login(process.env.TOKEN);

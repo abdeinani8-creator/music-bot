@@ -5,6 +5,9 @@ const { joinVoiceChannel, entersState, VoiceConnectionStatus } = require('@disco
 const { Player } = require('discord-player');
 const Groq = require("groq-sdk");
 
+// 🔥 FIX: force ffmpeg path
+process.env.FFMPEG_PATH = require('ffmpeg-static');
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -14,15 +17,30 @@ const client = new Client({
   ]
 });
 
-// 🎵 PLAYER (clean + stable)
-const player = new Player(client);
+// 🎵 PLAYER (STRONG CONFIG)
+const player = new Player(client, {
+  ytdlOptions: {
+    filter: "audioonly",
+    quality: "highestaudio",
+    highWaterMark: 1 << 25
+  }
+});
 
-// ✅ load extractors (required for YouTube)
+// ✅ LOAD EXTRACTORS
 (async () => {
   await player.extractors.loadDefault();
 })();
 
-// 🤖 AI (LATEST WORKING MODEL)
+// 🔥 ERROR HANDLING (IMPORTANT)
+player.events.on('error', (queue, error) => {
+  console.log('PLAYER ERROR:', error);
+});
+
+player.events.on('playerError', (queue, error) => {
+  console.log('PLAYER ERROR:', error);
+});
+
+// 🤖 AI
 const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY
 });
@@ -31,7 +49,7 @@ client.once('clientReady', () => {
   console.log('🔥 Bot ready!');
 });
 
-// 🔊 JOIN VC
+// 🔊 STAY IN VC 24/7
 async function stayInChannel(voiceChannel) {
   const connection = joinVoiceChannel({
     channelId: voiceChannel.id,
@@ -42,9 +60,8 @@ async function stayInChannel(voiceChannel) {
 
   try {
     await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
-    console.log("✅ Connected to VC");
+    console.log("✅ Connected (24/7 mode)");
   } catch {
-    console.log("❌ VC connection failed");
     connection.destroy();
   }
 }
@@ -54,14 +71,15 @@ client.on('messageCreate', async (message) => {
 
   const voiceChannel = message.member?.voice?.channel;
 
-  // 🔥 JOIN
+  // 🔥 JOIN (STAY FOREVER)
   if (message.content === '!join') {
     if (!voiceChannel) return message.reply('❌ Join VC first');
+
     await stayInChannel(voiceChannel);
-    return message.reply('✅ Joined 🔊');
+    return message.reply('✅ I stay here 24/7 😈');
   }
 
-  // 🎵 PLAY MUSIC
+  // 🎵 PLAY
   if (message.content.startsWith('!play')) {
     if (!voiceChannel) return message.reply('❌ Join VC first');
 
@@ -74,6 +92,7 @@ client.on('messageCreate', async (message) => {
         nodeOptions: {
           leaveOnEmpty: false,
           leaveOnEnd: false,
+          leaveOnStop: false,
           volume: 80
         }
       });
@@ -90,25 +109,40 @@ client.on('messageCreate', async (message) => {
     }
   }
 
-  // 🤖 AI COMMAND
+  // ⏭️ SKIP
+  if (message.content === '!skip') {
+    const queue = player.nodes.get(message.guild.id);
+    if (!queue || !queue.currentTrack) {
+      return message.reply('❌ Nothing to skip');
+    }
+
+    queue.node.skip();
+    message.reply('⏭️ Skipped');
+  }
+
+  // ⏹️ STOP (BUT STAY IN VC)
+  if (message.content === '!stop') {
+    const queue = player.nodes.get(message.guild.id);
+    if (queue) queue.delete();
+
+    message.reply('⏹️ Stopped (still in VC 😎)');
+  }
+
+  // 🤖 AI
   if (message.content.startsWith('!ai')) {
     const userMessage = message.content.replace('!ai', '').trim();
-
-    if (!userMessage) {
-      return message.reply('❌ Write something after !ai');
-    }
+    if (!userMessage) return message.reply('❌ Write something');
 
     try {
       const res = await groq.chat.completions.create({
         messages: [
-          { role: "system", content: "You are a friendly Discord bot." },
+          { role: "system", content: "You are a helpful Discord bot." },
           { role: "user", content: userMessage }
         ],
-        model: "llama-3.1-8b-instant" // ✅ CURRENT WORKING MODEL
+        model: "llama-3.1-8b-instant"
       });
 
-      const reply = res.choices?.[0]?.message?.content || "No response";
-      message.reply(reply);
+      message.reply(res.choices[0].message.content);
 
     } catch (err) {
       console.error("AI ERROR:", err);

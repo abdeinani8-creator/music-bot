@@ -3,6 +3,7 @@ require('dotenv').config();
 const { Client, GatewayIntentBits } = require('discord.js');
 const { joinVoiceChannel, entersState, VoiceConnectionStatus } = require('@discordjs/voice');
 const { Player } = require('discord-player');
+const { DefaultExtractors } = require('@discord-player/extractor');
 const Groq = require("groq-sdk");
 
 const client = new Client({
@@ -14,10 +15,15 @@ const client = new Client({
   ]
 });
 
-// 🎵 FIXED PLAYER (no extractors needed)
+// 🎵 PLAYER
 const player = new Player(client);
 
-// 🤖 AI
+// ✅ LOAD EXTRACTORS (NEW WAY)
+(async () => {
+  await player.extractors.loadDefault();
+})();
+
+// 🤖 AI (Groq)
 const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY
 });
@@ -73,7 +79,7 @@ client.on('messageCreate', async (message) => {
       });
 
       if (!result || !result.track) {
-        return message.reply('❌ Could not play');
+        return message.reply('❌ Could not find song');
       }
 
       message.reply(`🎶 Playing: ${result.track.title}`);
@@ -84,10 +90,13 @@ client.on('messageCreate', async (message) => {
     }
   }
 
-  // 🤖 AI
+  // 🤖 AI COMMAND
   if (message.content.startsWith('!ai')) {
     const userMessage = message.content.replace('!ai', '').trim();
-    if (!userMessage) return message.reply('❌ Write something');
+
+    if (!userMessage) {
+      return message.reply('❌ Write something after !ai');
+    }
 
     try {
       const res = await groq.chat.completions.create({
@@ -95,7 +104,7 @@ client.on('messageCreate', async (message) => {
           { role: "system", content: "You are a friendly Discord bot." },
           { role: "user", content: userMessage }
         ],
-        model: "llama3-70b-8192"
+        model: "mixtral-8x7b-32768" // ✅ WORKING MODEL
       });
 
       const reply = res.choices?.[0]?.message?.content || "No response";
@@ -106,6 +115,7 @@ client.on('messageCreate', async (message) => {
       message.reply('❌ AI error');
     }
   }
+
 });
 
 client.login(process.env.TOKEN);

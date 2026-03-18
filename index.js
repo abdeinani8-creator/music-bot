@@ -1,155 +1,204 @@
 require('dotenv').config();
+const { Client, GatewayIntentBits, EmbedBuilder, ActivityType } = require('discord.js');
+const { Player, useMainPlayer } = require('discord-player');
+const { DefaultExtractors } = require('@discord-player/extractor');
+const Groq = require('groq-sdk');
 
-const { Client, GatewayIntentBits } = require('discord.js');
-const { joinVoiceChannel, entersState, VoiceConnectionStatus } = require('@discordjs/voice');
-const { Player } = require('discord-player');
-const Groq = require("groq-sdk");
-
-// 🔥 FIX: force ffmpeg path
-process.env.FFMPEG_PATH = require('ffmpeg-static');
+// --- INITIALIZATION ---
 
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+    ]
 });
 
-// 🎵 PLAYER (STRONG CONFIG)
-const player = new Player(client, {
-  ytdlOptions: {
-    filter: "audioonly",
-    quality: "highestaudio",
-    highWaterMark: 1 << 25
-  }
+const groq = new Groq({
+    apiKey: process.env.GROQ_API_KEY,
 });
 
-// ✅ LOAD EXTRACTORS
+const player = new Player(client);
+
+// Load default extractors (YouTube, SoundCloud, etc.)
 (async () => {
-  await player.extractors.loadDefault();
+    await player.extractors.loadMulti(DefaultExtractors);
 })();
 
-// 🔥 ERROR HANDLING (IMPORTANT)
+const PREFIX = process.env.PREFIX || '!';
+
+// --- PLAYER EVENTS ---
+
+player.events.on('playerStart', (queue, track) => {
+    const embed = new EmbedBuilder()
+        .setColor('#0099ff')
+        .setTitle('🎶 Now Playing')
+        .setDescription(`**${track.title}**`)
+        .setThumbnail(track.thumbnail)
+        .addFields(
+            { name: 'Duration', value: track.duration, inline: true },
+            { name: 'Requested by', value: `${track.requestedBy}`, inline: true }
+        )
+        .setTimestamp();
+
+    queue.metadata.channel.send({ embeds: [embed] });
+});
+
 player.events.on('error', (queue, error) => {
-  console.log('PLAYER ERROR:', error);
+    console.error(`[Player Error] ${error.message}`);
+    queue.metadata.channel.send(`❌ | A player error occurred: ${error.message}`);
 });
 
 player.events.on('playerError', (queue, error) => {
-  console.log('PLAYER ERROR:', error);
+    console.error(`[Player Connection Error] ${error.message}`);
+    queue.metadata.channel.send(`❌ | A connection error occurred: ${error.message}`);
 });
 
-// 🤖 AI
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY
+// --- BOT EVENTS ---
+
+client.once('ready', () => {
+    console.log(`Logged in as ${client.user.tag}!`);
+    client.user.setActivity('Music & AI | !help', { type: ActivityType.Listening });
+    console.log('Bot is ready for 24/7 operation.');
 });
-
-client.once('clientReady', () => {
-  console.log('🔥 Bot ready!');
-});
-
-// 🔊 STAY IN VC 24/7
-async function stayInChannel(voiceChannel) {
-  const connection = joinVoiceChannel({
-    channelId: voiceChannel.id,
-    guildId: voiceChannel.guild.id,
-    adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-    selfDeaf: false
-  });
-
-  try {
-    await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
-    console.log("✅ Connected (24/7 mode)");
-  } catch {
-    connection.destroy();
-  }
-}
 
 client.on('messageCreate', async (message) => {
-  if (message.author.bot) return;
+    if (message.author.bot || !message.guild) return;
+    if (!message.content.startsWith(PREFIX)) return;
 
-  const voiceChannel = message.member?.voice?.channel;
+    const args = message.content.slice(PREFIX.length).trim().split(/ +/);
+    const command = args.shift().toLowerCase();
 
-  // 🔥 JOIN (STAY FOREVER)
-  if (message.content === '!join') {
-    if (!voiceChannel) return message.reply('❌ Join VC first');
+    // --- GENERAL COMMANDS ---
 
-    await stayInChannel(voiceChannel);
-    return message.reply('✅ I stay here 24/7 😈');
-  }
+    if (command === 'help') {
+        const embed = new EmbedBuilder()
+            .setColor('#00ff99')
+            .setTitle('🤖 Bot Commands')
+            .addFields(
+                { name: '🎵 Music', value: '`!join`, `!play <query>`, `!skip`, `!stop`' },
+                { name: '🧠 AI', value: '`!ai <prompt>`' },
+                { name: '⚙️ General', value: '`!help`, `!ping`' }
+            )
+            .setFooter({ text: '24/7 Voice Connection Enabled' });
 
-  // 🎵 PLAY
-  if (message.content.startsWith('!play')) {
-    if (!voiceChannel) return message.reply('❌ Join VC first');
+        return message.reply({ embeds: [embed] });
+    }
 
-    const query = message.content.slice(6).trim();
-    if (!query) return message.reply('❌ Give song name');
+    if (command === 'ping') {
+        return message.reply(`🏓 | Pong! Latency is ${client.ws.ping}ms.`);
+    }
 
-    try {
-      const result = await player.play(voiceChannel, query, {
-        searchEngine: "youtube",
-        nodeOptions: {
-          leaveOnEmpty: false,
-          leaveOnEnd: false,
-          leaveOnStop: false,
-          volume: 80
+    // --- MUSIC COMMANDS ---
+
+    if (command === 'join') {
+        const channel = message.member.voice.channel;
+        if (!channel) return message.reply('You need to be in a voice channel first!');
+
+        try {
+            await player.nodes.create(message.guild, {
+                metadata: { channel: message.channel },
+                selfDeaf: true,
+                leaveOnEmpty: false,
+                leaveOnEnd: false,
+                leaveOnStop: false,
+                volume: 80,
+            }).connect(channel);
+            
+            return message.reply(`✅ | Joined **${channel.name}**! I will stay here 24/7.`);
+        } catch (e) {
+            console.error(e);
+            return message.reply('❌ | Could not join the voice channel.');
         }
-      });
-
-      if (!result || !result.track) {
-        return message.reply('❌ No results found');
-      }
-
-      message.reply(`🎶 Playing: ${result.track.title}`);
-
-    } catch (err) {
-      console.error("MUSIC ERROR:", err);
-      message.reply('❌ Error playing music');
-    }
-  }
-
-  // ⏭️ SKIP
-  if (message.content === '!skip') {
-    const queue = player.nodes.get(message.guild.id);
-    if (!queue || !queue.currentTrack) {
-      return message.reply('❌ Nothing to skip');
     }
 
-    queue.node.skip();
-    message.reply('⏭️ Skipped');
-  }
+    if (command === 'play') {
+        const channel = message.member.voice.channel;
+        if (!channel) return message.reply('You need to be in a voice channel first!');
+        
+        const query = args.join(' ');
+        if (!query) return message.reply('Please provide a song name or URL!');
 
-  // ⏹️ STOP (BUT STAY IN VC)
-  if (message.content === '!stop') {
-    const queue = player.nodes.get(message.guild.id);
-    if (queue) queue.delete();
+        await message.channel.send(`🔍 | Searching for \`${query}\`...`);
 
-    message.reply('⏹️ Stopped (still in VC 😎)');
-  }
+        try {
+            const { track } = await player.play(channel, query, {
+                nodeOptions: {
+                    metadata: { channel: message.channel },
+                    selfDeaf: true,
+                    leaveOnEmpty: false,
+                    leaveOnEnd: false,
+                    leaveOnStop: false,
+                    volume: 80,
+                }
+            });
 
-  // 🤖 AI
-  if (message.content.startsWith('!ai')) {
-    const userMessage = message.content.replace('!ai', '').trim();
-    if (!userMessage) return message.reply('❌ Write something');
-
-    try {
-      const res = await groq.chat.completions.create({
-        messages: [
-          { role: "system", content: "You are a helpful Discord bot." },
-          { role: "user", content: userMessage }
-        ],
-        model: "llama-3.1-8b-instant"
-      });
-
-      message.reply(res.choices[0].message.content);
-
-    } catch (err) {
-      console.error("AI ERROR:", err);
-      message.reply('❌ AI error');
+            return message.channel.send(`✅ | **${track.title}** added to queue!`);
+        } catch (e) {
+            console.error(e);
+            return message.reply(`❌ | Something went wrong: ${e.message}`);
+        }
     }
-  }
 
+    if (command === 'skip') {
+        const queue = player.nodes.get(message.guild.id);
+        if (!queue || !queue.isPlaying()) return message.reply('❌ | No music is currently playing!');
+        
+        queue.node.skip();
+        return message.reply('⏭️ | Skipped the current track!');
+    }
+
+    if (command === 'stop') {
+        const queue = player.nodes.get(message.guild.id);
+        if (!queue) return message.reply('❌ | No active queue found!');
+        
+        queue.node.stop();
+        return message.reply('⏹️ | Music stopped! I am still in the voice channel.');
+    }
+
+    // --- AI COMMAND ---
+
+    if (command === 'ai') {
+        const prompt = args.join(' ');
+        if (!prompt) return message.reply('Please provide a prompt for the AI!');
+
+        await message.channel.sendTyping();
+
+        try {
+            const chatCompletion = await groq.chat.completions.create({
+                messages: [
+                    { role: 'system', content: 'You are a helpful and friendly Discord bot assistant. Keep your responses concise and engaging.' },
+                    { role: 'user', content: prompt }
+                ],
+                model: 'llama-3.3-70b-versatile',
+            });
+
+            const response = chatCompletion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+            
+            if (response.length > 2000) {
+                const chunks = response.match(/[\s\S]{1,2000}/g);
+                for (const chunk of chunks) {
+                    await message.reply(chunk);
+                }
+            } else {
+                return message.reply(response);
+            }
+        } catch (e) {
+            console.error('[AI Error]', e);
+            return message.reply('❌ | AI API error. Please check the logs or try again later.');
+        }
+    }
 });
 
-client.login(process.env.TOKEN);
+// --- ERROR HANDLING ---
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+    console.error('Uncaught Exception:', err);
+});
+
+client.login(process.env.DISCORD_TOKEN);

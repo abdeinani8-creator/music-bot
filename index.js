@@ -3,7 +3,6 @@ require('dotenv').config();
 const { Client, GatewayIntentBits } = require('discord.js');
 const { joinVoiceChannel, entersState, VoiceConnectionStatus } = require('@discordjs/voice');
 const { Player } = require('discord-player');
-const { DefaultExtractors } = require('@discord-player/extractor');
 const Groq = require("groq-sdk");
 
 const client = new Client({
@@ -15,20 +14,15 @@ const client = new Client({
   ]
 });
 
-// 🎵 PLAYER (FIXED)
-const player = new Player(client, {
-  ytdlOptions: {
-    quality: 'highestaudio',
-    highWaterMark: 1 << 25
-  }
-});
+// 🎵 PLAYER (clean + stable)
+const player = new Player(client);
 
-// ✅ LOAD EXTRACTORS
+// ✅ load extractors (required for YouTube)
 (async () => {
   await player.extractors.loadDefault();
 })();
 
-// 🤖 AI (Groq FIXED MODEL)
+// 🤖 AI (LATEST WORKING MODEL)
 const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY
 });
@@ -67,7 +61,7 @@ client.on('messageCreate', async (message) => {
     return message.reply('✅ Joined 🔊');
   }
 
-  // 🎵 PLAY
+  // 🎵 PLAY MUSIC
   if (message.content.startsWith('!play')) {
     if (!voiceChannel) return message.reply('❌ Join VC first');
 
@@ -110,7 +104,7 @@ client.on('messageCreate', async (message) => {
           { role: "system", content: "You are a friendly Discord bot." },
           { role: "user", content: userMessage }
         ],
-        model: "mixtral-8x7b-32768" // ✅ WORKING MODEL
+        model: "llama-3.1-8b-instant" // ✅ CURRENT WORKING MODEL
       });
 
       const reply = res.choices?.[0]?.message?.content || "No response";

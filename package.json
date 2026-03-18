@@ -16,7 +16,8 @@
     "groq-sdk": "^1.1.1",
     "dotenv": "^16.4.5",
     "ffmpeg-static": "^5.2.0",
-    "mediaplex": "^1.0.0"
+    "mediaplex": "^1.0.0",
+    "discord-api-types": "^0.37.71"
   },
   "engines": {
     "node": ">=20.0.0"

@@ -15,20 +15,25 @@ const client = new Client({
   ]
 });
 
-// 🎵 PLAYER
-const player = new Player(client);
+// 🎵 PLAYER (FIXED)
+const player = new Player(client, {
+  ytdlOptions: {
+    quality: 'highestaudio',
+    highWaterMark: 1 << 25
+  }
+});
 
-// ✅ LOAD EXTRACTORS (NEW WAY)
+// ✅ LOAD EXTRACTORS
 (async () => {
   await player.extractors.loadDefault();
 })();
 
-// 🤖 AI (Groq)
+// 🤖 AI (Groq FIXED MODEL)
 const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY
 });
 
-client.once('ready', () => {
+client.once('clientReady', () => {
   console.log('🔥 Bot ready!');
 });
 
@@ -71,6 +76,7 @@ client.on('messageCreate', async (message) => {
 
     try {
       const result = await player.play(voiceChannel, query, {
+        searchEngine: "youtube",
         nodeOptions: {
           leaveOnEmpty: false,
           leaveOnEnd: false,
@@ -79,13 +85,13 @@ client.on('messageCreate', async (message) => {
       });
 
       if (!result || !result.track) {
-        return message.reply('❌ Could not find song');
+        return message.reply('❌ No results found');
       }
 
       message.reply(`🎶 Playing: ${result.track.title}`);
 
     } catch (err) {
-      console.error(err);
+      console.error("MUSIC ERROR:", err);
       message.reply('❌ Error playing music');
     }
   }
@@ -111,7 +117,7 @@ client.on('messageCreate', async (message) => {
       message.reply(reply);
 
     } catch (err) {
-      console.error(err);
+      console.error("AI ERROR:", err);
       message.reply('❌ AI error');
     }
   }

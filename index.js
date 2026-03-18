@@ -15,14 +15,14 @@ const client = new Client({
   ]
 });
 
-// 🎵 PLAYER (FIXED AUDIO SETTINGS)
+// 🎵 PLAYER
 const player = new Player(client);
 
 (async () => {
   await player.extractors.loadMulti(DefaultExtractors);
 })();
 
-// 🤖 FREE AI
+// 🤖 FREE AI (Groq)
 const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY
 });
@@ -31,13 +31,13 @@ client.once('ready', () => {
   console.log('🔥 Bot ready 24/7 with FREE AI!');
 });
 
-// 🔥 KEEP BOT IN VC (FIXED)
+// 🔥 KEEP BOT IN VC
 async function stayInChannel(voiceChannel) {
   const connection = joinVoiceChannel({
     channelId: voiceChannel.id,
     guildId: voiceChannel.guild.id,
     adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-    selfDeaf: false // 👈 IMPORTANT FIX (was true)
+    selfDeaf: false
   });
 
   try {
@@ -62,7 +62,7 @@ client.on('messageCreate', async (message) => {
     return message.reply('✅ Joined and ready 🔊');
   }
 
-  // 🎵 PLAY (FIXED)
+  // 🎵 PLAY
   if (message.content.startsWith('!play')) {
     if (!voiceChannel) return message.reply('❌ Join VC first');
 
@@ -76,7 +76,7 @@ client.on('messageCreate', async (message) => {
           leaveOnEmpty: false,
           leaveOnEnd: false,
           leaveOnStop: false,
-          volume: 80, // 👈 important
+          volume: 80,
           bufferingTimeout: 3000
         }
       });
@@ -126,7 +126,7 @@ client.on('messageCreate', async (message) => {
     message.reply(`🔊 Volume set to ${vol}%`);
   }
 
-  // 🤖 FREE AI
+  // 🤖 AI COMMAND (FIXED MODEL)
   if (message.content.startsWith('!ai')) {
     const userMessage = message.content.replace('!ai', '').trim();
 
@@ -140,13 +140,14 @@ client.on('messageCreate', async (message) => {
           { role: "system", content: "You are a friendly Discord bot." },
           { role: "user", content: userMessage }
         ],
-        model: "llama3-8b-8192"
+        model: "llama3-70b-8192" // ✅ FIXED HERE
       });
 
-      message.reply(chatCompletion.choices[0].message.content);
+      const reply = chatCompletion.choices?.[0]?.message?.content || "No response";
+      message.reply(reply);
 
     } catch (error) {
-      console.error(error);
+      console.error('AI ERROR:', error);
       message.reply('❌ AI error');
     }
   }
